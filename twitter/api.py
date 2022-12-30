@@ -26,6 +26,8 @@ except ImportError:
 
 from .twitter_globals import POST_ACTIONS
 from .auth import NoAuth
+from .oauth import OAuth
+from .oauth2 import OAuth2
 
 import re
 import sys
@@ -57,6 +59,7 @@ class TwitterError(Exception):
     Base Exception thrown by the Twitter object when there is a
     general error interacting with the API.
     """
+
     pass
 
 
@@ -77,14 +80,14 @@ class TwitterHTTPError(TwitterError):
             # can't read the error text
             # let's try some of it
             data = e.partial
-        if self.e.headers.get('Content-Encoding') == 'gzip':
+        if self.e.headers.get("Content-Encoding") == "gzip":
             buf = StringIO(data)
             f = gzip.GzipFile(fileobj=buf)
             data = f.read()
         if len(data) == 0:
             data = {}
         else:
-            data = data.decode('utf8')
+            data = data.decode("utf8")
             if "json" == self.format:
                 try:
                     data = json.loads(data)
@@ -97,10 +100,10 @@ class TwitterHTTPError(TwitterError):
     def __str__(self):
         fmt = ("." + self.format) if self.format else ""
         return (
-                "Twitter sent status %i for URL: %s%s using parameters: "
-                "(%s)\ndetails: %s" % (
-                    self.e.code, self.uri, fmt, self.uriparts,
-                    self.response_data))
+            "Twitter sent status %i for URL: %s%s using parameters: "
+            "(%s)\ndetails: %s"
+            % (self.e.code, self.uri, fmt, self.uriparts, self.response_data)
+        )
 
 
 class TwitterResponse(object):
@@ -119,21 +122,21 @@ class TwitterResponse(object):
         """
         Remaining requests in the current rate-limit.
         """
-        return int(self.headers.get('X-Rate-Limit-Remaining', "0"))
+        return int(self.headers.get("X-Rate-Limit-Remaining", "0"))
 
     @property
     def rate_limit_limit(self):
         """
         The rate limit ceiling for that given request.
         """
-        return int(self.headers.get('X-Rate-Limit-Limit', "0"))
+        return int(self.headers.get("X-Rate-Limit-Limit", "0"))
 
     @property
     def rate_limit_reset(self):
         """
         Time in UTC epoch seconds when the rate limit will reset.
         """
-        return int(self.headers.get('X-Rate-Limit-Reset', "0"))
+        return int(self.headers.get("X-Rate-Limit-Reset", "0"))
 
 
 class TwitterDictResponse(dict, TwitterResponse):
@@ -157,7 +160,7 @@ def wrap_response(response, headers):
     return res
 
 
-POST_ACTIONS_RE = re.compile('(' + '|'.join(POST_ACTIONS) + r')(/\d+)?$')
+POST_ACTIONS_RE = re.compile("(" + "|".join(POST_ACTIONS) + r")(/\d+)?$")
 
 
 def method_for_uri(uri):
@@ -175,15 +178,15 @@ def build_uri(orig_uriparts, kwargs):
         # If this part matches a keyword argument (starting with _), use
         # the supplied value. Otherwise, just use the part.
         if uripart.startswith("_"):
-            part = (str(kwargs.pop(uripart, uripart)))
+            part = str(kwargs.pop(uripart, uripart))
         else:
             part = uripart
         uriparts.append(part)
-    uri = '/'.join(uriparts)
+    uri = "/".join(uriparts)
 
     # If an id kwarg is present and there is no id to fill in in
     # the list of uriparts, assume the id goes at the end.
-    id = kwargs.pop('id', None)
+    id = kwargs.pop("id", None)
     if id:
         uri += "/%s" % (id)
 
@@ -194,8 +197,19 @@ class TwitterCall(object):
     TWITTER_UNAVAILABLE_WAIT = 30  # delay after HTTP codes 502, 503 or 504
 
     def __init__(
-            self, auth, format, domain, callable_cls, uri="",
-            uriparts=None, secure=True, timeout=None, gzip=False, retry=False, verify_context=True):
+        self,
+        auth,
+        format,
+        domain,
+        callable_cls,
+        uri="",
+        uriparts=None,
+        secure=True,
+        timeout=None,
+        gzip=False,
+        retry=False,
+        verify_context=True,
+    ):
         self.auth = auth
         self.format = format
         self.domain = domain
@@ -216,15 +230,22 @@ class TwitterCall(object):
         # NOTE: when this code is run, the desired magic method cannot exist
         # on this object because we are using __getattr__ and not
         # __getattribute__, hence if it existed, it would be accessed normally.
-        if k.startswith('__'):
+        if k.startswith("__"):
             raise AttributeError
 
         def extend_call(arg):
             return self.callable_cls(
-                auth=self.auth, format=self.format, domain=self.domain,
-                callable_cls=self.callable_cls, timeout=self.timeout,
-                secure=self.secure, gzip=self.gzip, retry=self.retry,
-                uriparts=self.uriparts + (arg,), verify_context=self.verify_context)
+                auth=self.auth,
+                format=self.format,
+                domain=self.domain,
+                callable_cls=self.callable_cls,
+                timeout=self.timeout,
+                secure=self.secure,
+                gzip=self.gzip,
+                retry=self.retry,
+                uriparts=self.uriparts + (arg,),
+                verify_context=self.verify_context,
+            )
 
         if k == "_":
             return extend_call
@@ -237,35 +258,31 @@ class TwitterCall(object):
 
         # Shortcut call arguments for special json arguments case
         if "media/metadata/create" in uri:
-            media_id = kwargs.pop('media_id', None)
-            alt_text = kwargs.pop('alt_text', kwargs.pop('text', None))
+            media_id = kwargs.pop("media_id", None)
+            alt_text = kwargs.pop("alt_text", kwargs.pop("text", None))
             if media_id and alt_text:
-                jsondata = {
-                    "media_id": media_id,
-                    "alt_text": {"text": alt_text}
-                }
+                jsondata = {"media_id": media_id, "alt_text": {"text": alt_text}}
                 return self.__call__(_json=jsondata, **kwargs)
 
-        method = kwargs.pop('_method', None) or method_for_uri(uri)
+        method = kwargs.pop("_method", None) or method_for_uri(uri)
         domain = self.domain
 
         # If an _id kwarg is present, this is treated as id as a CGI
         # param.
-        _id = kwargs.pop('_id', None)
+        _id = kwargs.pop("_id", None)
         if _id:
-            kwargs['id'] = _id
+            kwargs["id"] = _id
 
         # If an _timeout is specified in kwargs, use it
-        _timeout = kwargs.pop('_timeout', None)
+        _timeout = kwargs.pop("_timeout", None)
 
-        secure_str = ''
+        secure_str = ""
         if self.secure:
-            secure_str = 's'
+            secure_str = "s"
         dot = ""
         if self.format:
             dot = "."
-        url_base = "http%s://%s/%s%s%s" % (
-            secure_str, domain, uri, dot, self.format)
+        url_base = "http%s://%s/%s%s%s" % (secure_str, domain, uri, dot, self.format)
 
         # Check if argument tells whether img is already base64 encoded
         b64_convert = not kwargs.pop("_base64", False)
@@ -274,13 +291,13 @@ class TwitterCall(object):
 
         # Catch media arguments to handle oauth query differently for multipart
         media = None
-        if 'media' in kwargs:
-            mediafield = 'media'
-            media = kwargs.pop('media')
+        if "media" in kwargs:
+            mediafield = "media"
+            media = kwargs.pop("media")
             media_raw = True
-        elif 'media[]' in kwargs:
-            mediafield = 'media[]'
-            media = kwargs.pop('media[]')
+        elif "media[]" in kwargs:
+            mediafield = "media[]"
+            media = kwargs.pop("media[]")
             if b64_convert:
                 media = base64.b64encode(media)
             media_raw = False
@@ -288,11 +305,11 @@ class TwitterCall(object):
         # Catch media arguments that are not accepted through multipart
         # and are not yet base64 encoded
         if b64_convert:
-            for arg in ['banner', 'image']:
+            for arg in ["banner", "image"]:
                 if arg in kwargs:
                     kwargs[arg] = base64.b64encode(kwargs[arg])
 
-        headers = {'Accept-Encoding': 'gzip'} if self.gzip else dict()
+        headers = {"Accept-Encoding": "gzip"} if self.gzip else dict()
         body = None
         arg_data = None
 
@@ -300,10 +317,10 @@ class TwitterCall(object):
         # require args as a json string within the request's body
         # for instance media/metadata/create on upload.twitter.com
         # https://dev.twitter.com/rest/reference/post/media/metadata/create
-        jsondata = kwargs.pop('_json', None)
+        jsondata = kwargs.pop("_json", None)
         if jsondata:
             body = actually_bytes(json.dumps(jsondata))
-            headers['Content-Type'] = 'application/json; charset=UTF-8'
+            headers["Content-Type"] = "application/json; charset=UTF-8"
 
         if self.auth:
             headers.update(self.auth.generate_headers())
@@ -312,43 +329,42 @@ class TwitterCall(object):
             url_args = {} if media or jsondata else kwargs
             if method == "PUT" and _id:
                 # the two PUT method APIs both require uri id parameter
-                url_args['id'] = _id
-            arg_data = self.auth.encode_params(
-                url_base, method, url_args)
-            if method == 'GET' or media or jsondata:
-                url_base += '?' + arg_data
+                url_args["id"] = _id
+            arg_data = self.auth.encode_params(url_base, method, url_args)
+            if method == "GET" or media or jsondata:
+                url_base += "?" + arg_data
             else:
-                body = arg_data.encode('utf-8')
+                body = arg_data.encode("utf-8")
 
         # Handle query as multipart when sending media
         if media:
             BOUNDARY = b"###Python-Twitter###"
             bod = []
-            bod.append(b'--' + BOUNDARY)
+            bod.append(b"--" + BOUNDARY)
             bod.append(
                 b'Content-Disposition: form-data; name="'
                 + actually_bytes(mediafield)
-                + b'"')
-            bod.append(b'Content-Type: application/octet-stream')
+                + b'"'
+            )
+            bod.append(b"Content-Type: application/octet-stream")
             if not media_raw:
-                bod.append(b'Content-Transfer-Encoding: base64')
-            bod.append(b'')
+                bod.append(b"Content-Transfer-Encoding: base64")
+            bod.append(b"")
             bod.append(actually_bytes(media))
             for k, v in kwargs.items():
                 k = actually_bytes(k)
                 v = actually_bytes(v)
-                bod.append(b'--' + BOUNDARY)
+                bod.append(b"--" + BOUNDARY)
                 bod.append(b'Content-Disposition: form-data; name="' + k + b'"')
-                bod.append(b'Content-Type: text/plain;charset=utf-8')
-                bod.append(b'')
+                bod.append(b"Content-Type: text/plain;charset=utf-8")
+                bod.append(b"")
                 bod.append(v)
-            bod.append(b'--' + BOUNDARY + b'--')
-            bod.append(b'')
-            bod.append(b'')
-            body = b'\r\n'.join(bod)
+            bod.append(b"--" + BOUNDARY + b"--")
+            bod.append(b"")
+            bod.append(b"")
+            body = b"\r\n".join(bod)
             # print(body.decode('utf-8', errors='ignore'))
-            headers['Content-Type'] = \
-                b'multipart/form-data; boundary=' + BOUNDARY
+            headers["Content-Type"] = b"multipart/form-data; boundary=" + BOUNDARY
 
             if not PY_3_OR_HIGHER:
                 url_base = url_base.encode("utf-8")
@@ -362,7 +378,7 @@ class TwitterCall(object):
         # the method we want...
         # https://stackoverflow.com/questions/111945/is-there-any-way-to-do-http-put-in-python/111988#111988
         if not PY_3_OR_HIGHER:
-            method = method.encode('utf-8')
+            method = method.encode("utf-8")
         req.get_method = lambda: method
 
         if self.retry:
@@ -373,7 +389,7 @@ class TwitterCall(object):
     def _handle_response(self, req, uri, arg_data, _timeout=None):
         kwargs = {}
         if _timeout:
-            kwargs['timeout'] = _timeout
+            kwargs["timeout"] = _timeout
         try:
             context = None
             if _HAVE_SSL:
@@ -382,9 +398,9 @@ class TwitterCall(object):
                 else:
                     context = ssl.create_default_context()
                     context.load_verify_locations(cafile=certifi.where())
-            kwargs['context'] = context
+            kwargs["context"] = context
             handle = urllib_request.urlopen(req, **kwargs)
-            if handle.headers['Content-Type'] in ['image/jpeg', 'image/png']:
+            if handle.headers["Content-Type"] in ["image/jpeg", "image/png"]:
                 return handle
             try:
                 data = handle.read()
@@ -392,7 +408,7 @@ class TwitterCall(object):
                 # Even if we don't get all the bytes we should have there
                 # may be a complete response in e.partial
                 data = e.partial
-            if handle.info().get('Content-Encoding') == 'gzip':
+            if handle.info().get("Content-Encoding") == "gzip":
                 # Handle gzip decompression
                 buf = StringIO(data)
                 f = gzip.GzipFile(fileobj=buf)
@@ -401,17 +417,19 @@ class TwitterCall(object):
                 return wrap_response({}, handle.headers)
             elif "json" == self.format:
                 try:
-                    res = json.loads(data.decode('utf8'))
+                    res = json.loads(data.decode("utf8"))
                 except JSONDecodeError as e:
                     # it seems like the data received was incomplete
                     # and we should catch it to allow retries
-                    raise TwitterError("Incomplete JSON data collected for %s (%s): %s)" % (uri, arg_data, e))
+                    raise TwitterError(
+                        "Incomplete JSON data collected for %s (%s): %s)"
+                        % (uri, arg_data, e)
+                    )
                 return wrap_response(res, handle.headers)
             else:
-                return wrap_response(
-                    data.decode('utf8'), handle.headers)
+                return wrap_response(data.decode("utf8"), handle.headers)
         except urllib_error.HTTPError as e:
-            if (e.code == 304):
+            if e.code == 304:
                 return []
             else:
                 raise TwitterHTTPError(e, uri, self.format, arg_data)
@@ -425,14 +443,20 @@ class TwitterCall(object):
             except TwitterHTTPError as e:
                 if e.e.code == 429:
                     # API rate limit reached
-                    reset = int(e.e.headers.get('X-Rate-Limit-Reset', time() + 30))
+                    reset = int(e.e.headers.get("X-Rate-Limit-Reset", time() + 30))
                     delay = int(reset - time() + 2)  # add some extra margin
                     if delay <= 0:
                         delay = self.TWITTER_UNAVAILABLE_WAIT
-                    print("API rate limit reached; waiting for %ds..." % delay, file=sys.stderr)
+                    print(
+                        "API rate limit reached; waiting for %ds..." % delay,
+                        file=sys.stderr,
+                    )
                 elif e.e.code in (502, 503, 504):
                     delay = self.TWITTER_UNAVAILABLE_WAIT
-                    print("Service unavailable; waiting for %ds..." % delay, file=sys.stderr)
+                    print(
+                        "Service unavailable; waiting for %ds..." % delay,
+                        file=sys.stderr,
+                    )
                 else:
                     raise
                 if isinstance(retry, int) and not isinstance(retry, bool):
@@ -445,7 +469,11 @@ class TwitterCall(object):
                     if retry <= 0:
                         raise
                     retry -= 1
-                print("There was a problem dialoguing with the API; waiting for %ds..." % delay, file=sys.stderr)
+                print(
+                    "There was a problem dialoguing with the API; waiting for %ds..."
+                    % delay,
+                    file=sys.stderr,
+                )
                 sleep(delay)
                 delay *= 2
 
@@ -576,9 +604,15 @@ class Twitter(TwitterCall):
     """
 
     def __init__(
-            self, format="json",
-            domain="api.twitter.com", secure=True, auth=None,
-            api_version=_DEFAULT, retry=False, verify_context=True):
+        self,
+        format="json",
+        domain="api.twitter.com",
+        secure=True,
+        auth=None,
+        api_version=_DEFAULT,
+        retry=False,
+        verify_context=True,
+    ):
         """
         Create a new twitter API connector.
 
@@ -607,21 +641,31 @@ class Twitter(TwitterCall):
         if not auth:
             auth = NoAuth()
 
-        if (format not in ("json", "xml", "")):
+        if format not in ("json", "xml", ""):
             raise ValueError("Unknown data format '%s'" % (format))
 
-        if api_version is _DEFAULT:
-            api_version = '1.1'
+        if isinstance(auth, OAuth):
+            api_version = "1.1"
+        elif isinstance(auth, OAuth2):
+            api_version = "2"
+        else:
+            raise ValueError("Unknown auth type '%s'" % (auth))
 
         uriparts = ()
         if api_version:
             uriparts += (str(api_version),)
 
         TwitterCall.__init__(
-            self, auth=auth, format=format, domain=domain,
+            self,
+            auth=auth,
+            format=format,
+            domain=domain,
             callable_cls=TwitterCall,
-            secure=secure, uriparts=uriparts, retry=retry,
-            verify_context=verify_context)
+            secure=secure,
+            uriparts=uriparts,
+            retry=retry,
+            verify_context=verify_context,
+        )
 
 
 __all__ = ["Twitter", "TwitterError", "TwitterHTTPError", "TwitterResponse"]
